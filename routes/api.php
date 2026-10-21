@@ -455,6 +455,9 @@ Route::middleware(['auth:sanctum', 'log.token', 'throttle:external-api'])->prefi
     Route::get('exclusive-links-listings', [PropertiesController::class, 'exclusiveLinksListings']);
 });
 
+// Keyflow Public API (v1) routes
+require base_path('routes/api_v1.php');
+
 Route::post('webhooks/property-finder', [ExternalController::class, 'capturePropertyFinderWebhook']);
 Route::post('webhooks/bayut', [ExternalController::class, 'captureBayutWebhook']);
 

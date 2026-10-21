@@ -45,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'jwt.auth' => JwtAuthenticate::class,
             'log.token' => LogTokenRequest::class,
             'auth.logs' => BasicAuthLogs::class,
+            'public.api.auth' => \App\Http\Middleware\AuthenticatePublicApi::class,
         ]);
 
     })

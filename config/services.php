@@ -76,4 +76,8 @@ return [
         ],
     ],
 
+    'keyflow_public_api' => [
+        'api_key' => env('KEYFLOW_PUBLIC_API_KEY'),
+    ],
+
 ];

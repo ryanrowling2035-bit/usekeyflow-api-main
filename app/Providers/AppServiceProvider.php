@@ -22,6 +22,15 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(200)->by('external-api|'.$key);
         });
 
+        RateLimiter::for('keyflow-public-api', function (Request $request) {
+            $key = $request->user()?->id
+                ?? $request->bearerToken()
+                ?? $request->header('X-API-KEY')
+                ?? $request->ip();
+
+            return Limit::perMinute(120)->by('keyflow-public-api|'.$key);
+        });
+
         if (Schema::hasTable('global_settings')) {
 
             $settings = GlobalSetting::pluck('settingValue', 'settingKey')->toArray();
