@@ -1,0 +1,62 @@
+module.exports = {
+  apps: [
+    {
+      name: 'crm-queue-worker',
+      script: 'artisan',
+      interpreter: 'php',
+      args: 'queue:work --queue=high,default --sleep=3 --tries=3 --max-time=3600',
+      cwd: __dirname,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '512M',
+      out_file: 'storage/logs/pm2-queue-out.log',
+      error_file: 'storage/logs/pm2-queue-error.log',
+      merge_logs: true,
+      time: true,
+      env: {
+        APP_ENV: 'production',
+      },
+    },
+    {
+      name: 'crm-reverb',
+      script: 'artisan',
+      interpreter: 'php',
+      args: 'reverb:start --host=0.0.0.0 --port=9080',
+      cwd: __dirname,
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '512M',
+      // Avoid a tight crash-loop (e.g. port already in use): back off between
+      // restarts and stop after repeated fast failures instead of spamming logs.
+      min_uptime: '10s',
+      max_restarts: 10,
+      exp_backoff_restart_delay: 1000,
+      out_file: 'storage/logs/pm2-reverb-out.log',
+      error_file: 'storage/logs/pm2-reverb-error.log',
+      merge_logs: true,
+      time: true,
+      env: {
+        APP_ENV: 'production',
+      },
+    },
+    {
+      name: 'exclusive-scheduler',
+      script: 'artisan',
+      interpreter: 'php',
+      args: 'schedule:work',
+      cwd: __dirname,
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '256M',
+      out_file: 'storage/logs/pm2-scheduler-out.log',
+      error_file: 'storage/logs/pm2-scheduler-error.log',
+      merge_logs: true,
+      time: true,
+      env: {
+        APP_ENV: 'production',
+      },
+    },
+  ],
+};

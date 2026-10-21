@@ -1,0 +1,32 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('offers', function (Blueprint $table) {
+            $table->decimal('offeredAmount', 15, 2)->nullable()->change();
+            $table->date('targetDate')->nullable()->change();
+            $table->string('ownerName')->nullable()->change();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('offers', function (Blueprint $table) {
+            $table->decimal('offeredAmount', 15, 2)->nullable(false)->change();
+            $table->date('targetDate')->nullable(false)->change();
+            $table->string('ownerName')->nullable(false)->change();
+        });
+    }
+};
