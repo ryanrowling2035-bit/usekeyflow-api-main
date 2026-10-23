@@ -1,0 +1,595 @@
+{
+  "info": {
+    "_postman_id": "7b58c894-39f2-4c27-9a5d-4f810141ae59",
+    "name": "Keyflow Public API (v1) - Live",
+    "description": "Postman Collection for Keyflow CRM Public API (v1) on https://crm.globalsaas.net/api/v1.\n\nAuthentication supported:\n1. Query parameter: `?api_key={{apiKey}}`\n2. Header: `X-API-KEY: {{apiKey}}`\n3. Bearer Token: `Authorization: Bearer {{apiKey}}`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://crm.globalsaas.net/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "keyflow_test_secret_123",
+      "type": "string"
+    },
+    {
+      "key": "leadId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-KEY",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Leads",
+      "description": "Endpoints to list, search, ingest and update leads.",
+      "item": [
+        {
+          "name": "GET Leads (List / Filter / Search)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/leads?api_key={{apiKey}}&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "leads"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (min: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (1-100, default: 20)"
+                },
+                {
+                  "key": "status",
+                  "value": "New Lead",
+                  "description": "Filter by status (e.g., 'New Lead', 'Contacting', 'Property Search')",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "Marketing OS",
+                  "description": "Filter by leadSource or technicalSource",
+                  "disabled": true
+                },
+                {
+                  "key": "agent_id",
+                  "value": "5",
+                  "description": "Filter by assigned agent ID (e.g. 5)",
+                  "disabled": true
+                },
+                {
+                  "key": "marketing_os_lead_id",
+                  "value": "mos_lead_test_001",
+                  "description": "Filter by external Marketing OS Lead ID",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Dubai",
+                  "description": "Search referenceNo, phone, comments, contact name/email, agent name/email",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "2026-01-01",
+                  "description": "Created from date (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31",
+                  "description": "Created to date (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "updated_after",
+                  "value": "2026-10-01T00:00:00Z",
+                  "description": "Filter leads updated after ISO timestamp",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieve paginated list of leads with full contact, agent, and listing metadata."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Ingest / Create Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+971501234567\",\n  \"name\": \"Ahmed Al Mansoori\",\n  \"email\": \"ahmed.mansoori@example.com\",\n  \"nationality\": \"United Arab Emirates\",\n  \"lead_source\": \"Marketing OS\",\n  \"enquiry_type\": \"buyer\",\n  \"listing_type\": \"sale\",\n  \"lead_rating\": \"hot\",\n  \"lead_qualification\": \"qualified\",\n  \"investment_motivation\": \"Investment / High ROI\",\n  \"budget\": 2500000,\n  \"price_min\": 2000000,\n  \"price_max\": 3000000,\n  \"bedrooms_min\": 2,\n  \"bedrooms_max\": 3,\n  \"bathrooms_min\": 2,\n  \"bathrooms_max\": 3,\n  \"city\": \"Dubai\",\n  \"community\": \"Dubai Marina\",\n  \"project_name\": \"Marina Gate\",\n  \"agent_id\": 5,\n  \"property_reference\": \"DM-R-000001\",\n  \"comments\": \"Interested in high floor 2-bedroom unit with marina view.\",\n  \"marketing_os_lead_id\": \"mos_lead_test_001\",\n  \"utm_source\": \"meta_ads\",\n  \"utm_medium\": \"paid_social\",\n  \"utm_campaign\": \"dubai_marina_q4\",\n  \"utm_term\": \"luxury_apartments\",\n  \"utm_content\": \"video_ad_variant_a\",\n  \"web_url\": \"https://exclusive-links.com/dubai-marina-gate\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/leads?api_key={{apiKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "leads"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                }
+              ]
+            },
+            "description": "Ingest a new qualified lead into the CRM. Supports automatic contact resolution/deduplication by phone, idempotency check via `marketing_os_lead_id`, UTM tracking, and property linking."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Single Lead (by ID / Ref / MarketingOS ID)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/leads/{{leadId}}?api_key={{apiKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "leads",
+                "{{leadId}}"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                }
+              ]
+            },
+            "description": "Retrieve lead details by CRM integer ID, Reference Number (e.g. `ENQ-XXXXX`), or `marketing_os_lead_id`."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Lead",
+          "request": {
+            "method": "Post",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Contacting\",\n  \"lead_rating\": \"hot\",\n  \"lead_qualification\": \"high_intent_investor\",\n  \"budget\": 2750000,\n  \"actual_price\": 2700000,\n  \"comments\": \"Agent reached out via WhatsApp. Client confirmed appointment for viewing this Saturday.\",\n  \"city\": \"Dubai\",\n  \"community\": \"Dubai Marina\",\n  \"project_name\": \"Marina Gate II\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/leads/{{leadId}}?api_key={{apiKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "leads",
+                "{{leadId}}"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                }
+              ]
+            },
+            "description": "Update lead details, qualification status, rating, budget, comments, or reassign agent."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Update Lead (IIS / WebDAV Fallback)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-HTTP-Method-Override",
+                "value": "PUT",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Contacting\",\n  \"lead_rating\": \"hot\",\n  \"lead_qualification\": \"high_intent_investor\",\n  \"budget\": 2750000,\n  \"actual_price\": 2700000,\n  \"comments\": \"Agent reached out via WhatsApp. Client confirmed appointment for viewing this Saturday.\",\n  \"city\": \"Dubai\",\n  \"community\": \"Dubai Marina\",\n  \"project_name\": \"Marina Gate II\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/leads/{{leadId}}?api_key={{apiKey}}&_method=PUT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "leads",
+                "{{leadId}}"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                },
+                {
+                  "key": "_method",
+                  "value": "PUT",
+                  "description": "Method spoofing parameter to bypass IIS 405"
+                }
+              ]
+            },
+            "description": "Updates lead via POST with _method=PUT and X-HTTP-Method-Override. Use this if the hosting webserver (like IIS WebDAV) blocks HTTP PUT with a 405 error."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Deals & Commissions",
+      "description": "Endpoints to retrieve deals and commission breakdowns.",
+      "item": [
+        {
+          "name": "GET Deals (List / Filter / Search)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/deals?api_key={{apiKey}}&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "deals"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (min: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (1-100, default: 20)"
+                },
+                {
+                  "key": "status",
+                  "value": "Closed",
+                  "description": "Filter by deal closing status",
+                  "disabled": true
+                },
+                {
+                  "key": "agent_id",
+                  "value": "5",
+                  "description": "Filter by assigned agent ID",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Marina",
+                  "description": "Search deal name, reference number, buyer name/email, property ref/title, or agent name",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "2026-01-01",
+                  "description": "Filter by closingDate / created_at from (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31",
+                  "description": "Filter by closingDate / created_at to (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "updated_after",
+                  "value": "2026-10-01T00:00:00Z",
+                  "description": "Filter deals updated after timestamp",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieve deals with buyer, property, assigned agent, and comprehensive commission split metrics."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Pipeline Summary",
+      "description": "Live aggregate metrics and pipeline breakdown by stage.",
+      "item": [
+        {
+          "name": "GET Live Pipeline Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/pipeline?api_key={{apiKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pipeline"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                },
+                {
+                  "key": "agent_id",
+                  "value": "5",
+                  "description": "Optional: filter metrics by specific agent ID",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieve live summary of pipeline across all stages (New Lead, Contacting, Property Search, Thinking About It, Under Offer, Sale Progressing, Sold, Rented, Lost) with total values, weighted values, and closed deal commissions."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Agents Directory",
+      "description": "Directory of agents and brokers in the CRM.",
+      "item": [
+        {
+          "name": "GET Agent Directory",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/agents?api_key={{apiKey}}&page=1&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "agents"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (min: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Items per page (1-100, default: 50)"
+                },
+                {
+                  "key": "status",
+                  "value": "Active",
+                  "description": "Filter by status (e.g. Active, Inactive)",
+                  "disabled": true
+                },
+                {
+                  "key": "department",
+                  "value": "Residential Sales",
+                  "description": "Filter by department",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Deepak",
+                  "description": "Search agent by name, email, or agent code",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieve agent directory including agent code, department, contact info, active properties count, and assigned leads count."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Property Listings",
+      "description": "Public listings directory and inventory.",
+      "item": [
+        {
+          "name": "GET Property Listings (List / Filter / Search)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/listings?api_key={{apiKey}}&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "listings"
+              ],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKey}}",
+                  "description": "Public API Key"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (min: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Items per page (1-100, default: 20)"
+                },
+                {
+                  "key": "status",
+                  "value": "published",
+                  "description": "Filter by listing status (e.g., published, upcoming, draft)",
+                  "disabled": true
+                },
+                {
+                  "key": "agent_id",
+                  "value": "1",
+                  "description": "Filter by listing agent ID",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Luxury",
+                  "description": "Search listing title, reference number, category, listing type, community name, agent name",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "2026-01-01",
+                  "description": "Filter by created_at from (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-12-31",
+                  "description": "Filter by created_at to (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "updated_after",
+                  "value": "2026-10-01T00:00:00Z",
+                  "description": "Filter listings updated after timestamp",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieve property inventory with pricing, specs, regulatory numbers (RERA/Govt QR), location hierarchy, photos, and agent details."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

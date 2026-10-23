@@ -81,10 +81,20 @@ class DealResource extends JsonResource
                     return null;
                 }
 
+                $extras = is_string($this->enquiry->extras) ? json_decode($this->enquiry->extras, true) : (is_array($this->enquiry->extras) ? $this->enquiry->extras : []);
+
                 return [
                     'id' => $this->enquiry->id,
                     'reference_no' => $this->enquiry->referenceNo,
                     'status' => $this->enquiry->status,
+                    'marketing_os_lead_id' => $extras['marketing_os_lead_id'] ?? ($extras['mid'] ?? null),
+                    'utm' => [
+                        'source' => $extras['utm_source'] ?? ($extras['src'] ?? null),
+                        'medium' => $extras['utm_medium'] ?? ($extras['med'] ?? null),
+                        'campaign' => $extras['utm_campaign'] ?? ($extras['cmp'] ?? null),
+                        'term' => $extras['utm_term'] ?? ($extras['trm'] ?? null),
+                        'content' => $extras['utm_content'] ?? ($extras['cnt'] ?? null),
+                    ],
                 ];
             }),
             'created_at' => $this->toIsoUtc($this->created_at),

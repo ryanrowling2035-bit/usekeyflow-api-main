@@ -15,17 +15,30 @@ class LeadResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $extras = is_string($this->extras) ? json_decode($this->extras, true) : (is_array($this->extras) ? $this->extras : []);
+        $marketingOsLeadId = $extras['marketing_os_lead_id'] ?? ($extras['mid'] ?? null);
+        $utm = [
+            'source' => $extras['utm_source'] ?? ($extras['src'] ?? null),
+            'medium' => $extras['utm_medium'] ?? ($extras['med'] ?? null),
+            'campaign' => $extras['utm_campaign'] ?? ($extras['cmp'] ?? null),
+            'term' => $extras['utm_term'] ?? ($extras['trm'] ?? null),
+            'content' => $extras['utm_content'] ?? ($extras['cnt'] ?? null),
+        ];
+
         return [
             'id' => $this->id,
             'reference_no' => $this->referenceNo,
+            'marketing_os_lead_id' => $marketingOsLeadId,
             'phone' => $this->phone,
             'status' => $this->status,
             'lead_source' => $this->leadSource,
             'technical_source' => $this->technicalSource,
+            'utm' => $utm,
+            'web_url' => $this->webUrl,
             'enquiry_type' => $this->enquiryType,
             'listing_type' => $this->listingType,
             'lead_rating' => $this->leadRating,
-            'lead_qualification' => $this->leadQualification,
+            'lead_qualification' => $this->leadQualification ?? ($extras['lead_qualification'] ?? ($extras['qual'] ?? null)),
             'investment_motivation' => $this->investmentMotivation,
             'budget' => $this->budget,
             'actual_price' => $this->actualPrice,

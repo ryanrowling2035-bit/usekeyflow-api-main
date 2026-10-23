@@ -2,18 +2,24 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Constants\Constants;
 use App\Http\Resources\V1\LeadResource;
+use App\Models\Contact;
 use App\Models\Enquiry;
+use App\Models\Property;
+use App\Models\User;
+use App\Services\EnquiryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class LeadController extends BaseV1Controller
 {
     /**
      * GET /v1/leads
-     * Filters: from, to, agent_id, status, source, updated_after, page, limit.
+     * Filters: from, to, agent_id, status, source, marketing_os_lead_id, search, updated_after, page, limit.
      */
     public function index(Request $request): JsonResponse
     {
@@ -23,6 +29,7 @@ class LeadController extends BaseV1Controller
             'agent_id' => 'nullable|integer',
             'status' => 'nullable|string',
             'source' => 'nullable|string',
+            'marketing_os_lead_id' => 'nullable|string',
             'search' => 'nullable|string',
             'updated_after' => 'nullable|date',
             'page' => 'nullable|integer|min:1',
@@ -55,6 +62,14 @@ class LeadController extends BaseV1Controller
                 });
             }
 
+            if ($request->filled('marketing_os_lead_id')) {
+                $mosId = $request->marketing_os_lead_id;
+                $query->where(function ($q) use ($mosId) {
+                    $q->where('extras->mid', $mosId)
+                        ->orWhere('extras->marketing_os_lead_id', $mosId);
+                });
+            }
+
             if ($request->filled('search')) {
                 $search = $request->search;
                 $query->where(function ($q) use ($search) {
@@ -63,6 +78,7 @@ class LeadController extends BaseV1Controller
                         ->orWhere('leadSource', 'LIKE', "%{$search}%")
                         ->orWhere('technicalSource', 'LIKE', "%{$search}%")
                         ->orWhere('comments', 'LIKE', "%{$search}%")
+                        ->orWhere('extras->marketing_os_lead_id', 'LIKE', "%{$search}%")
                         ->orWhereHas('contact', function ($sub) use ($search) {
                             $sub->where('name', 'LIKE', "%{$search}%")
                                 ->orWhere('email', 'LIKE', "%{$search}%")
@@ -99,5 +115,410 @@ class LeadController extends BaseV1Controller
         } catch (\Throwable $e) {
             return $this->handleException('LeadController@index', $e);
         }
+    }
+
+    /**
+     * GET /v1/leads/{id}
+     * Retrieve a single lead by CRM ID, Reference Number, or Marketing OS Lead ID.
+     */
+    public function show(string $id): JsonResponse
+    {
+        try {
+            $enquiry = $this->resolveLead($id);
+
+            if (! $enquiry) {
+                return $this->error('Lead not found for identifier: '.$id, 404);
+            }
+
+            $enquiry->loadMissing(['agent', 'contact', 'listing']);
+
+            return $this->success(new LeadResource($enquiry), 'Lead retrieved successfully.');
+        } catch (\Throwable $e) {
+            return $this->handleException('LeadController@show', $e);
+        }
+    }
+
+    /**
+     * POST /v1/leads
+     * Ingest qualified leads from Marketing OS into the CRM.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => 'required|string|max:50',
+            'name' => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255',
+            'nationality' => 'nullable|string|max:100',
+            'marketing_os_lead_id' => 'nullable|string|max:100',
+            'utm_source' => 'nullable|string|max:100',
+            'utm_medium' => 'nullable|string|max:100',
+            'utm_campaign' => 'nullable|string|max:150',
+            'utm_term' => 'nullable|string|max:150',
+            'utm_content' => 'nullable|string|max:150',
+            'web_url' => 'nullable|string|max:1000',
+            'property_reference' => 'nullable|string|max:100',
+            'listing_id' => 'nullable|integer',
+            'enquiry_type' => 'nullable|string|max:50',
+            'listing_type' => 'nullable|string|in:sale,rent,offPlan',
+            'lead_rating' => 'nullable|string|in:hot,warm,cold',
+            'lead_qualification' => 'nullable|string|max:100',
+            'investment_motivation' => 'nullable|string|max:100',
+            'budget' => 'nullable|numeric|min:0',
+            'price_min' => 'nullable|numeric|min:0',
+            'price_max' => 'nullable|numeric|min:0',
+            'bedrooms_min' => 'nullable|integer|min:0',
+            'bedrooms_max' => 'nullable|integer|min:0',
+            'bathrooms_min' => 'nullable|integer|min:0',
+            'bathrooms_max' => 'nullable|integer|min:0',
+            'city' => 'nullable|string|max:100',
+            'community' => 'nullable|string|max:150',
+            'project_name' => 'nullable|string|max:150',
+            'comments' => 'nullable|string',
+            'agent_id' => 'nullable|integer',
+            'agent_code' => 'nullable|string|max:50',
+            'agent_email' => 'nullable|email',
+            'lead_source' => 'nullable|string|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error('Validation error.', 422, $validator->errors()->toArray());
+        }
+
+        try {
+            // 1. Idempotency Check: if marketing_os_lead_id already exists, return existing lead
+            if ($request->filled('marketing_os_lead_id')) {
+                $mosId = $request->marketing_os_lead_id;
+                $existing = Enquiry::where('extras->mid', $mosId)
+                    ->orWhere('extras->marketing_os_lead_id', $mosId)
+                    ->first();
+                if ($existing) {
+                    $existing->loadMissing(['agent', 'contact', 'listing']);
+
+                    return $this->success(new LeadResource($existing), 'Lead already exists (idempotent response).', 200);
+                }
+            }
+
+            // 2. Resolve or Create Contact (E.164 phone normalization + deduplication)
+            $rawPhone = $request->input('phone');
+            $normalizedPhone = function_exists('normalizePhoneE164')
+                ? (normalizePhoneE164($rawPhone) ?: $rawPhone)
+                : $rawPhone;
+
+            $contact = Contact::resolveMasterByPhone($normalizedPhone);
+            if (! $contact && $request->filled('email')) {
+                $contact = Contact::where('email', $request->email)->first()?->masterOrSelf();
+            }
+
+            $enquiryTypeInput = $request->input('enquiry_type', 'buyer');
+            $contactType = in_array(strtolower((string) $enquiryTypeInput), ['tenant', 'rent'])
+                ? Constants::CONTACT_TYPE_TENANT
+                : Constants::CONTACT_TYPE_BUYER;
+
+            $actorId = auth()->id() ?: 1;
+
+            if ($contact) {
+                $contact->addContactTypes($contactType);
+                if ($request->filled('nationality') && empty($contact->nationality)) {
+                    $contact->update(['nationality' => $request->nationality]);
+                }
+            } else {
+                $contact = Contact::create([
+                    'name' => $request->input('name') ?: 'Lead - '.$normalizedPhone,
+                    'phone' => $normalizedPhone,
+                    'email' => $request->input('email'),
+                    'nationality' => $request->input('nationality'),
+                    'contactType' => [$contactType],
+                    'source' => $request->input('lead_source') ?: 'Marketing OS',
+                    'createdBy' => $actorId,
+                ]);
+            }
+
+            // 3. Resolve Linked Property (if reference or listing_id passed)
+            $property = null;
+            if ($request->filled('property_reference')) {
+                $cleanRef = trim(preg_replace(['/^\s*(?:listing|property)\s*[:\-]?\s+/i', '/\s+/'], ['', ' '], $request->property_reference));
+                $property = Property::where('referenceNumber', $cleanRef)->first();
+            } elseif ($request->filled('listing_id')) {
+                $property = Property::find($request->listing_id);
+            }
+
+            // 4. Resolve Assigned Agent
+            $assignedAgentId = $this->resolveAgentId($request, $property, $actorId);
+
+            // 5. Build Extras JSON payload for Marketing OS & UTM tracking (Zero DB Schema Change)
+            $extras = [
+                'mid' => $request->input('marketing_os_lead_id'),
+                'src' => $request->input('utm_source'),
+                'med' => $request->input('utm_medium'),
+                'cmp' => $request->input('utm_campaign'),
+                'trm' => $request->input('utm_term'),
+                'cnt' => $request->input('utm_content'),
+                'qual' => $request->input('lead_qualification') ?: 'qualified',
+            ];
+            $extrasClean = array_filter($extras, fn ($v) => ! is_null($v) && $v !== '');
+            $extrasJson = ! empty($extrasClean) ? json_encode($extrasClean) : null;
+
+            // 6. Generate Reference Number
+            $referenceNo = function_exists('generateEnquiryReferenceNo')
+                ? generateEnquiryReferenceNo()
+                : 'ENQ-'.strtoupper(bin2hex(random_bytes(4)));
+
+            $budget = $request->input('budget') ?: ($property?->price);
+            $actualPrice = $property?->price ?: $budget;
+
+            $enquiry = Enquiry::create([
+                'referenceNo' => $referenceNo,
+                'contactId' => $contact->id,
+                'agentId' => $assignedAgentId,
+                'listingId' => $property?->id,
+                'phone' => $normalizedPhone,
+                'enquiryType' => $request->input('enquiry_type') ?: ($property && $property->listingType === 'rent' ? 'tenant' : 'buyer'),
+                'listingType' => $request->input('listing_type') ?: ($property?->listingType ?: 'sale'),
+                'status' => Constants::ENQUIRY_NEW_LEAD,
+                'leadSource' => $request->input('lead_source') ?: 'Marketing OS',
+                'technicalSource' => 'Marketing OS API',
+                'leadRating' => $request->input('lead_rating') ?: 'hot',
+                'investmentMotivation' => $request->input('investment_motivation'),
+                'budget' => $budget,
+                'actualPrice' => $actualPrice,
+                'priceMin' => $request->input('price_min') ?: ($actualPrice ? round($actualPrice * 0.95) : null),
+                'priceMax' => $request->input('price_max') ?: ($actualPrice ? round($actualPrice * 1.05) : null),
+                'bedroomsMin' => $request->input('bedrooms_min') ?: ($property?->bedrooms),
+                'bedroomsMax' => $request->input('bedrooms_max') ?: ($property?->bedrooms ? $property->bedrooms + 1 : null),
+                'bathroomsMin' => $request->input('bathrooms_min') ?: ($property?->bathrooms),
+                'bathroomsMax' => $request->input('bathrooms_max') ?: ($property?->bathrooms ? $property->bathrooms + 1 : null),
+                'city' => $request->input('city') ?: 'Dubai',
+                'community' => $request->input('community') ?: ($property?->pfCommunity),
+                'projectName' => $request->input('project_name') ?: ($property?->title),
+                'comments' => $request->input('comments') ?: 'Qualified lead created via Marketing OS API',
+                'webUrl' => $request->input('web_url'),
+                'extras' => $extrasJson,
+                'createdBy' => $actorId,
+            ]);
+
+            // 7. Activity logging & history
+            if (function_exists('logUserActivity')) {
+                logUserActivity([
+                    'userId' => $actorId,
+                    'action' => 'created',
+                    'module' => Constants::MODULE_ENQUIRY,
+                    'moduleId' => $enquiry->id,
+                    'description' => "Lead created via Marketing OS API: #{$enquiry->referenceNo}",
+                ]);
+            }
+
+            if (function_exists('logEnquiryHistory')) {
+                logEnquiryHistory([
+                    'enquiryId' => $enquiry->id,
+                    'field' => 'created',
+                    'originalValue' => null,
+                    'newValue' => json_encode([
+                        'message' => "Enquiry created via Marketing OS: #{$enquiry->referenceNo}",
+                        'marketing_os_lead_id' => $request->input('marketing_os_lead_id'),
+                    ]),
+                ]);
+            }
+
+            $enquiry->load(['agent', 'contact', 'listing']);
+
+            return $this->success(new LeadResource($enquiry), 'Lead created successfully.', 201);
+        } catch (\Throwable $e) {
+            return $this->handleException('LeadController@store', $e);
+        }
+    }
+
+    /**
+     * PUT /v1/leads/{id}
+     * Update an existing lead by CRM ID, Reference Number, or Marketing OS Lead ID.
+     */
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'status' => 'nullable|string',
+            'lead_rating' => 'nullable|string|in:hot,warm,cold',
+            'lead_qualification' => 'nullable|string|max:100',
+            'investment_motivation' => 'nullable|string|max:100',
+            'budget' => 'nullable|numeric|min:0',
+            'actual_price' => 'nullable|numeric|min:0',
+            'bedrooms_min' => 'nullable|integer|min:0',
+            'bedrooms_max' => 'nullable|integer|min:0',
+            'bathrooms_min' => 'nullable|integer|min:0',
+            'bathrooms_max' => 'nullable|integer|min:0',
+            'city' => 'nullable|string|max:100',
+            'community' => 'nullable|string|max:150',
+            'project_name' => 'nullable|string|max:150',
+            'comments' => 'nullable|string',
+            'agent_id' => 'nullable|integer',
+            'agent_code' => 'nullable|string|max:50',
+            'agent_email' => 'nullable|email',
+            'utm_source' => 'nullable|string|max:100',
+            'utm_medium' => 'nullable|string|max:100',
+            'utm_campaign' => 'nullable|string|max:150',
+            'utm_term' => 'nullable|string|max:150',
+            'utm_content' => 'nullable|string|max:150',
+            'marketing_os_lead_id' => 'nullable|string|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error('Validation error.', 422, $validator->errors()->toArray());
+        }
+
+        try {
+            $enquiry = $this->resolveLead($id);
+
+            if (! $enquiry) {
+                return $this->error('Lead not found for identifier: '.$id, 404);
+            }
+
+            $updateData = [];
+
+            if ($request->filled('status')) {
+                $updateData['status'] = $request->status;
+            }
+            if ($request->filled('lead_rating')) {
+                $updateData['leadRating'] = $request->lead_rating;
+            }
+            if ($request->filled('investment_motivation')) {
+                $updateData['investmentMotivation'] = $request->investment_motivation;
+            }
+            if ($request->filled('budget')) {
+                $updateData['budget'] = $request->budget;
+            }
+            if ($request->filled('actual_price')) {
+                $updateData['actualPrice'] = $request->actual_price;
+            }
+            if ($request->filled('bedrooms_min')) {
+                $updateData['bedroomsMin'] = $request->bedrooms_min;
+            }
+            if ($request->filled('bedrooms_max')) {
+                $updateData['bedroomsMax'] = $request->bedrooms_max;
+            }
+            if ($request->filled('bathrooms_min')) {
+                $updateData['bathroomsMin'] = $request->bathrooms_min;
+            }
+            if ($request->filled('bathrooms_max')) {
+                $updateData['bathroomsMax'] = $request->bathrooms_max;
+            }
+            if ($request->filled('city')) {
+                $updateData['city'] = $request->city;
+            }
+            if ($request->filled('community')) {
+                $updateData['community'] = $request->community;
+            }
+            if ($request->filled('project_name')) {
+                $updateData['projectName'] = $request->project_name;
+            }
+            if ($request->filled('comments')) {
+                $existingComments = $enquiry->comments ? $enquiry->comments."\n" : '';
+                $updateData['comments'] = $existingComments.'['.now()->toDateTimeString().'] '.$request->comments;
+            }
+
+            // Reassign agent if specified
+            if ($request->filled('agent_id') || $request->filled('agent_code') || $request->filled('agent_email')) {
+                $agentId = $this->resolveAgentId($request, null, $enquiry->agentId);
+                if ($agentId) {
+                    $updateData['agentId'] = $agentId;
+                }
+            }
+
+            // Update extras JSON if any tracking parameter passed
+            $extras = is_string($enquiry->extras) ? json_decode($enquiry->extras, true) : (is_array($enquiry->extras) ? $enquiry->extras : []);
+            $keyMap = [
+                'marketing_os_lead_id' => 'mid',
+                'utm_source' => 'src',
+                'utm_medium' => 'med',
+                'utm_campaign' => 'cmp',
+                'utm_term' => 'trm',
+                'utm_content' => 'cnt',
+                'lead_qualification' => 'qual',
+            ];
+            $extrasChanged = false;
+
+            foreach ($keyMap as $inputKey => $shortKey) {
+                if ($request->filled($inputKey)) {
+                    $extras[$shortKey] = $request->input($inputKey);
+                    unset($extras[$inputKey]);
+                    $extrasChanged = true;
+                }
+            }
+
+            if ($extrasChanged) {
+                $clean = array_filter($extras, fn ($v) => ! is_null($v) && $v !== '');
+                $updateData['extras'] = ! empty($clean) ? json_encode($clean) : null;
+            }
+
+            if (! empty($updateData)) {
+                $enquiry->update($updateData);
+
+                if (function_exists('logUserActivity')) {
+                    logUserActivity([
+                        'userId' => auth()->id() ?: 1,
+                        'action' => 'updated',
+                        'module' => Constants::MODULE_ENQUIRY,
+                        'moduleId' => $enquiry->id,
+                        'description' => "Lead updated via Marketing OS API: #{$enquiry->referenceNo}",
+                    ]);
+                }
+            }
+
+            $enquiry->load(['agent', 'contact', 'listing']);
+
+            return $this->success(new LeadResource($enquiry), 'Lead updated successfully.');
+        } catch (\Throwable $e) {
+            return $this->handleException('LeadController@update', $e);
+        }
+    }
+
+    /**
+     * Resolve a lead by CRM ID, Reference Number, or Marketing OS Lead ID.
+     */
+    protected function resolveLead(string $id): ?Enquiry
+    {
+        if (is_numeric($id)) {
+            $enquiry = Enquiry::find((int) $id);
+            if ($enquiry) {
+                return $enquiry;
+            }
+        }
+
+        return Enquiry::where('referenceNo', $id)
+            ->orWhere('extras->mid', $id)
+            ->orWhere('extras->marketing_os_lead_id', $id)
+            ->first();
+    }
+
+    /**
+     * Resolve the assigned agent ID based on request parameters, property, or default fallback.
+     */
+    protected function resolveAgentId(Request $request, ?Property $property, int $defaultFallback): int
+    {
+        if ($request->filled('agent_id')) {
+            $agent = User::find($request->agent_id);
+            if ($agent) {
+                return $agent->id;
+            }
+        }
+
+        if ($request->filled('agent_code')) {
+            $agent = User::where('agentCode', $request->agent_code)->first();
+            if ($agent) {
+                return $agent->id;
+            }
+        }
+
+        if ($request->filled('agent_email')) {
+            $agent = User::where('email', $request->agent_email)->first();
+            if ($agent) {
+                return $agent->id;
+            }
+        }
+
+        if ($property && ! empty($property->agentId)) {
+            return (int) $property->agentId;
+        }
+
+        $activeAgent = User::where('status', Constants::USER_STATUS_ACTIVE)->first();
+
+        return $activeAgent ? (int) $activeAgent->id : $defaultFallback;
     }
 }

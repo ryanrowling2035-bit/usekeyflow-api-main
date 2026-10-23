@@ -24,3 +24,5 @@ Homestead.yaml
 Thumbs.db
 CLAUDE.md
 .agents/
+*.zip
+exclusive-link*.json
