@@ -155,6 +155,10 @@ class LeadController extends BaseV1Controller
             'utm_campaign' => 'nullable|string|max:150',
             'utm_term' => 'nullable|string|max:150',
             'utm_content' => 'nullable|string|max:150',
+            'gclid' => 'nullable|string|max:255',
+            'referrer' => 'nullable|string|max:1000',
+            'referral' => 'nullable|string|max:1000',
+            'campaign_identifier' => 'nullable|string|max:150',
             'web_url' => 'nullable|string|max:1000',
             'property_reference' => 'nullable|string|max:100',
             'listing_id' => 'nullable|integer',
@@ -178,6 +182,7 @@ class LeadController extends BaseV1Controller
             'agent_code' => 'nullable|string|max:50',
             'agent_email' => 'nullable|email',
             'lead_source' => 'nullable|string|max:100',
+            'utm' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -245,14 +250,26 @@ class LeadController extends BaseV1Controller
             // 4. Resolve Assigned Agent
             $assignedAgentId = $this->resolveAgentId($request, $property, $actorId);
 
+            $gclid = $request->input('gclid') ?? $request->input('utm.gclid');
+            $referrer = $request->input('referrer') ?? $request->input('referral') ?? $request->input('utm.referrer') ?? $request->input('utm.referral');
+            $campaignIdentifier = $request->input('campaign_identifier') ?? $request->input('utm.campaign_identifier');
+            $utmSource = $request->input('utm_source') ?? $request->input('utm.source');
+            $utmMedium = $request->input('utm_medium') ?? $request->input('utm.medium');
+            $utmCampaign = $request->input('utm_campaign') ?? $request->input('utm.campaign');
+            $utmTerm = $request->input('utm_term') ?? $request->input('utm.term');
+            $utmContent = $request->input('utm_content') ?? $request->input('utm.content');
+
             // 5. Build Extras JSON payload for Marketing OS & UTM tracking (Zero DB Schema Change)
             $extras = [
                 'mid' => $request->input('marketing_os_lead_id'),
-                'src' => $request->input('utm_source'),
-                'med' => $request->input('utm_medium'),
-                'cmp' => $request->input('utm_campaign'),
-                'trm' => $request->input('utm_term'),
-                'cnt' => $request->input('utm_content'),
+                'src' => $utmSource,
+                'med' => $utmMedium,
+                'cmp' => $utmCampaign,
+                'trm' => $utmTerm,
+                'cnt' => $utmContent,
+                'gclid' => $gclid,
+                'referrer' => $referrer,
+                'campaign_identifier' => $campaignIdentifier,
                 'qual' => $request->input('lead_qualification') ?: 'qualified',
             ];
             $extrasClean = array_filter($extras, fn ($v) => ! is_null($v) && $v !== '');
@@ -275,6 +292,7 @@ class LeadController extends BaseV1Controller
                 'enquiryType' => $request->input('enquiry_type') ?: ($property && $property->listingType === 'rent' ? 'tenant' : 'buyer'),
                 'listingType' => $request->input('listing_type') ?: ($property?->listingType ?: 'sale'),
                 'status' => Constants::ENQUIRY_NEW_LEAD,
+                'referredBy' => $referrer,
                 'leadSource' => $request->input('lead_source') ?: 'Marketing OS',
                 'technicalSource' => 'Marketing OS API',
                 'leadRating' => $request->input('lead_rating') ?: 'hot',
@@ -334,12 +352,21 @@ class LeadController extends BaseV1Controller
     public function update(Request $request, string $id): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'name' => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:50',
+            'nationality' => 'nullable|string|max:100',
             'status' => 'nullable|string',
+            'lead_source' => 'nullable|string|max:100',
+            'enquiry_type' => 'nullable|string|max:50',
+            'listing_type' => 'nullable|string|in:sale,rent,offPlan',
             'lead_rating' => 'nullable|string|in:hot,warm,cold',
             'lead_qualification' => 'nullable|string|max:100',
             'investment_motivation' => 'nullable|string|max:100',
             'budget' => 'nullable|numeric|min:0',
             'actual_price' => 'nullable|numeric|min:0',
+            'price_min' => 'nullable|numeric|min:0',
+            'price_max' => 'nullable|numeric|min:0',
             'bedrooms_min' => 'nullable|integer|min:0',
             'bedrooms_max' => 'nullable|integer|min:0',
             'bathrooms_min' => 'nullable|integer|min:0',
@@ -347,16 +374,24 @@ class LeadController extends BaseV1Controller
             'city' => 'nullable|string|max:100',
             'community' => 'nullable|string|max:150',
             'project_name' => 'nullable|string|max:150',
+            'web_url' => 'nullable|string|max:1000',
             'comments' => 'nullable|string',
             'agent_id' => 'nullable|integer',
             'agent_code' => 'nullable|string|max:50',
             'agent_email' => 'nullable|email',
+            'property_reference' => 'nullable|string|max:100',
+            'listing_id' => 'nullable|integer',
             'utm_source' => 'nullable|string|max:100',
             'utm_medium' => 'nullable|string|max:100',
             'utm_campaign' => 'nullable|string|max:150',
             'utm_term' => 'nullable|string|max:150',
             'utm_content' => 'nullable|string|max:150',
             'marketing_os_lead_id' => 'nullable|string|max:100',
+            'gclid' => 'nullable|string|max:255',
+            'referrer' => 'nullable|string|max:1000',
+            'referral' => 'nullable|string|max:1000',
+            'campaign_identifier' => 'nullable|string|max:150',
+            'utm' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -372,11 +407,50 @@ class LeadController extends BaseV1Controller
 
             $updateData = [];
 
+            // 1. Update contact fields if present
+            if ($enquiry->contact) {
+                $contactUpdates = [];
+                if ($request->filled('name')) {
+                    $contactUpdates['name'] = $request->name;
+                }
+                if ($request->filled('email')) {
+                    $contactUpdates['email'] = $request->email;
+                }
+                if ($request->filled('nationality')) {
+                    $contactUpdates['nationality'] = $request->nationality;
+                }
+                if ($request->filled('phone')) {
+                    $normalizedPhone = function_exists('normalizePhoneE164')
+                        ? (normalizePhoneE164($request->phone) ?: $request->phone)
+                        : $request->phone;
+                    $contactUpdates['phone'] = $normalizedPhone;
+                    $updateData['phone'] = $normalizedPhone;
+                }
+                if (! empty($contactUpdates)) {
+                    $enquiry->contact->update($contactUpdates);
+                }
+            } elseif ($request->filled('phone')) {
+                $normalizedPhone = function_exists('normalizePhoneE164')
+                    ? (normalizePhoneE164($request->phone) ?: $request->phone)
+                    : $request->phone;
+                $updateData['phone'] = $normalizedPhone;
+            }
+
+            // 2. Update lead fields
             if ($request->filled('status')) {
                 $updateData['status'] = $request->status;
             }
             if ($request->filled('lead_rating')) {
                 $updateData['leadRating'] = $request->lead_rating;
+            }
+            if ($request->filled('lead_source')) {
+                $updateData['leadSource'] = $request->lead_source;
+            }
+            if ($request->filled('enquiry_type')) {
+                $updateData['enquiryType'] = $request->enquiry_type;
+            }
+            if ($request->filled('listing_type')) {
+                $updateData['listingType'] = $request->listing_type;
             }
             if ($request->filled('investment_motivation')) {
                 $updateData['investmentMotivation'] = $request->investment_motivation;
@@ -386,6 +460,12 @@ class LeadController extends BaseV1Controller
             }
             if ($request->filled('actual_price')) {
                 $updateData['actualPrice'] = $request->actual_price;
+            }
+            if ($request->filled('price_min')) {
+                $updateData['priceMin'] = $request->price_min;
+            }
+            if ($request->filled('price_max')) {
+                $updateData['priceMax'] = $request->price_max;
             }
             if ($request->filled('bedrooms_min')) {
                 $updateData['bedroomsMin'] = $request->bedrooms_min;
@@ -408,20 +488,41 @@ class LeadController extends BaseV1Controller
             if ($request->filled('project_name')) {
                 $updateData['projectName'] = $request->project_name;
             }
+            if ($request->filled('web_url')) {
+                $updateData['webUrl'] = $request->web_url;
+            }
             if ($request->filled('comments')) {
                 $existingComments = $enquiry->comments ? $enquiry->comments."\n" : '';
                 $updateData['comments'] = $existingComments.'['.now()->toDateTimeString().'] '.$request->comments;
             }
+            if ($request->filled('referrer') || $request->filled('referral')) {
+                $updateData['referredBy'] = $request->input('referrer') ?? $request->input('referral');
+            }
+
+            // Resolve Linked Property if property_reference or listing_id provided
+            $property = null;
+            if ($request->filled('property_reference')) {
+                $cleanRef = trim(preg_replace(['/^\s*(?:listing|property)\s*[:\-]?\s+/i', '/\s+/'], ['', ' '], $request->property_reference));
+                $property = Property::where('referenceNumber', $cleanRef)->first();
+                if ($property) {
+                    $updateData['listingId'] = $property->id;
+                }
+            } elseif ($request->filled('listing_id')) {
+                $property = Property::find($request->listing_id);
+                if ($property) {
+                    $updateData['listingId'] = $property->id;
+                }
+            }
 
             // Reassign agent if specified
             if ($request->filled('agent_id') || $request->filled('agent_code') || $request->filled('agent_email')) {
-                $agentId = $this->resolveAgentId($request, null, $enquiry->agentId);
+                $agentId = $this->resolveAgentId($request, $property, $enquiry->agentId);
                 if ($agentId) {
                     $updateData['agentId'] = $agentId;
                 }
             }
 
-            // Update extras JSON if any tracking parameter passed
+            // 3. Update extras JSON tracking parameters (safely without unsetting matching keys)
             $extras = is_string($enquiry->extras) ? json_decode($enquiry->extras, true) : (is_array($enquiry->extras) ? $enquiry->extras : []);
             $keyMap = [
                 'marketing_os_lead_id' => 'mid',
@@ -431,13 +532,28 @@ class LeadController extends BaseV1Controller
                 'utm_term' => 'trm',
                 'utm_content' => 'cnt',
                 'lead_qualification' => 'qual',
+                'gclid' => 'gclid',
+                'referrer' => 'referrer',
+                'referral' => 'referrer',
+                'campaign_identifier' => 'campaign_identifier',
             ];
             $extrasChanged = false;
 
             foreach ($keyMap as $inputKey => $shortKey) {
-                if ($request->filled($inputKey)) {
-                    $extras[$shortKey] = $request->input($inputKey);
-                    unset($extras[$inputKey]);
+                $val = null;
+                if ($request->has($inputKey)) {
+                    $val = $request->input($inputKey);
+                } elseif (str_starts_with($inputKey, 'utm_') && $request->has('utm.'.substr($inputKey, 4))) {
+                    $val = $request->input('utm.'.substr($inputKey, 4));
+                } elseif ($request->has('utm.'.$inputKey)) {
+                    $val = $request->input('utm.'.$inputKey);
+                }
+
+                if ($val !== null) {
+                    $extras[$shortKey] = $val;
+                    if ($inputKey !== $shortKey) {
+                        unset($extras[$inputKey]);
+                    }
                     $extrasChanged = true;
                 }
             }
@@ -461,6 +577,7 @@ class LeadController extends BaseV1Controller
                 }
             }
 
+            $enquiry->refresh();
             $enquiry->load(['agent', 'contact', 'listing']);
 
             return $this->success(new LeadResource($enquiry), 'Lead updated successfully.');

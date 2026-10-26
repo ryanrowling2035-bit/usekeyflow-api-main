@@ -82,18 +82,27 @@ class DealResource extends JsonResource
                 }
 
                 $extras = is_string($this->enquiry->extras) ? json_decode($this->enquiry->extras, true) : (is_array($this->enquiry->extras) ? $this->enquiry->extras : []);
+                $gclid = $extras['gclid'] ?? ($extras['gcl_id'] ?? null);
+                $referrer = $extras['referrer'] ?? ($extras['ref'] ?? ($this->enquiry->referredBy ?? null));
+                $campaignIdentifier = $extras['campaign_identifier'] ?? ($extras['campaign_id'] ?? null);
 
                 return [
                     'id' => $this->enquiry->id,
                     'reference_no' => $this->enquiry->referenceNo,
                     'status' => $this->enquiry->status,
                     'marketing_os_lead_id' => $extras['marketing_os_lead_id'] ?? ($extras['mid'] ?? null),
+                    'gclid' => $gclid,
+                    'referrer' => $referrer,
+                    'campaign_identifier' => $campaignIdentifier,
                     'utm' => [
                         'source' => $extras['utm_source'] ?? ($extras['src'] ?? null),
                         'medium' => $extras['utm_medium'] ?? ($extras['med'] ?? null),
                         'campaign' => $extras['utm_campaign'] ?? ($extras['cmp'] ?? null),
                         'term' => $extras['utm_term'] ?? ($extras['trm'] ?? null),
                         'content' => $extras['utm_content'] ?? ($extras['cnt'] ?? null),
+                        'gclid' => $gclid,
+                        'referrer' => $referrer,
+                        'campaign_identifier' => $campaignIdentifier,
                     ],
                 ];
             }),

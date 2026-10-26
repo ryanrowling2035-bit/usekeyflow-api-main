@@ -17,18 +17,28 @@ class LeadResource extends JsonResource
     {
         $extras = is_string($this->extras) ? json_decode($this->extras, true) : (is_array($this->extras) ? $this->extras : []);
         $marketingOsLeadId = $extras['marketing_os_lead_id'] ?? ($extras['mid'] ?? null);
+        $gclid = $extras['gclid'] ?? ($extras['gcl_id'] ?? null);
+        $referrer = $extras['referrer'] ?? ($extras['ref'] ?? ($this->referredBy ?? null));
+        $campaignIdentifier = $extras['campaign_identifier'] ?? ($extras['campaign_id'] ?? null);
+
         $utm = [
             'source' => $extras['utm_source'] ?? ($extras['src'] ?? null),
             'medium' => $extras['utm_medium'] ?? ($extras['med'] ?? null),
             'campaign' => $extras['utm_campaign'] ?? ($extras['cmp'] ?? null),
             'term' => $extras['utm_term'] ?? ($extras['trm'] ?? null),
             'content' => $extras['utm_content'] ?? ($extras['cnt'] ?? null),
+            'gclid' => $gclid,
+            'referrer' => $referrer,
+            'campaign_identifier' => $campaignIdentifier,
         ];
 
         return [
             'id' => $this->id,
             'reference_no' => $this->referenceNo,
             'marketing_os_lead_id' => $marketingOsLeadId,
+            'gclid' => $gclid,
+            'referrer' => $referrer,
+            'campaign_identifier' => $campaignIdentifier,
             'phone' => $this->phone,
             'status' => $this->status,
             'lead_source' => $this->leadSource,

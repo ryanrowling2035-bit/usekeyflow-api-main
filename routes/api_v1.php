@@ -26,7 +26,7 @@ Route::prefix('v1')
         Route::get('leads', [LeadController::class, 'index']);
         Route::post('leads', [LeadController::class, 'store']);
         Route::get('leads/{id}', [LeadController::class, 'show']);
-        Route::post('leads/{id}', [LeadController::class, 'update']);
+        Route::match(['post', 'put', 'patch'], 'leads/{id}', [LeadController::class, 'update']);
 
         // Deals & Commissions
         Route::get('deals', [DealController::class, 'index']);
