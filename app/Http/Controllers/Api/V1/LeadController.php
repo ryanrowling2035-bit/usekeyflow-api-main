@@ -65,8 +65,8 @@ class LeadController extends BaseV1Controller
             if ($request->filled('marketing_os_lead_id')) {
                 $mosId = $request->marketing_os_lead_id;
                 $query->where(function ($q) use ($mosId) {
-                    $q->where('extras->mid', $mosId)
-                        ->orWhere('extras->marketing_os_lead_id', $mosId);
+                    $q->where('extras', 'LIKE', '%"mid":"'.$mosId.'"%')
+                        ->orWhere('extras', 'LIKE', '%"marketing_os_lead_id":"'.$mosId.'"%');
                 });
             }
 
@@ -78,7 +78,7 @@ class LeadController extends BaseV1Controller
                         ->orWhere('leadSource', 'LIKE', "%{$search}%")
                         ->orWhere('technicalSource', 'LIKE', "%{$search}%")
                         ->orWhere('comments', 'LIKE', "%{$search}%")
-                        ->orWhere('extras->marketing_os_lead_id', 'LIKE', "%{$search}%")
+                        ->orWhere('extras', 'LIKE', "%{$search}%")
                         ->orWhereHas('contact', function ($sub) use ($search) {
                             $sub->where('name', 'LIKE', "%{$search}%")
                                 ->orWhere('email', 'LIKE', "%{$search}%")
@@ -190,12 +190,13 @@ class LeadController extends BaseV1Controller
         }
 
         try {
-            // 1. Idempotency Check: if marketing_os_lead_id already exists, return existing lead
+            // 1. Idempotency Check: if marketing_os_lead_id already exists, return existing lead (Safe LIKE search for VARCHAR(255))
             if ($request->filled('marketing_os_lead_id')) {
                 $mosId = $request->marketing_os_lead_id;
-                $existing = Enquiry::where('extras->mid', $mosId)
-                    ->orWhere('extras->marketing_os_lead_id', $mosId)
-                    ->first();
+                $existing = Enquiry::where(function ($q) use ($mosId) {
+                    $q->where('extras', 'LIKE', '%"mid":"'.$mosId.'"%')
+                        ->orWhere('extras', 'LIKE', '%"marketing_os_lead_id":"'.$mosId.'"%');
+                })->first();
                 if ($existing) {
                     $existing->loadMissing(['agent', 'contact', 'listing']);
 
@@ -272,8 +273,7 @@ class LeadController extends BaseV1Controller
                 'campaign_identifier' => $campaignIdentifier,
                 'qual' => $request->input('lead_qualification') ?: 'qualified',
             ];
-            $extrasClean = array_filter($extras, fn ($v) => ! is_null($v) && $v !== '');
-            $extrasJson = ! empty($extrasClean) ? json_encode($extrasClean) : null;
+            $extrasJson = $this->encodeExtrasSafe($extras);
 
             // 6. Generate Reference Number
             $referenceNo = function_exists('generateEnquiryReferenceNo')
@@ -559,8 +559,7 @@ class LeadController extends BaseV1Controller
             }
 
             if ($extrasChanged) {
-                $clean = array_filter($extras, fn ($v) => ! is_null($v) && $v !== '');
-                $updateData['extras'] = ! empty($clean) ? json_encode($clean) : null;
+                $updateData['extras'] = $this->encodeExtrasSafe($extras);
             }
 
             if (! empty($updateData)) {
@@ -599,8 +598,8 @@ class LeadController extends BaseV1Controller
         }
 
         return Enquiry::where('referenceNo', $id)
-            ->orWhere('extras->mid', $id)
-            ->orWhere('extras->marketing_os_lead_id', $id)
+            ->orWhere('extras', 'LIKE', '%"mid":"'.$id.'"%')
+            ->orWhere('extras', 'LIKE', '%"marketing_os_lead_id":"'.$id.'"%')
             ->first();
     }
 
@@ -637,5 +636,46 @@ class LeadController extends BaseV1Controller
         $activeAgent = User::where('status', Constants::USER_STATUS_ACTIVE)->first();
 
         return $activeAgent ? (int) $activeAgent->id : $defaultFallback;
+    }
+
+    /**
+     * Safely encode extras into JSON guaranteeing it never exceeds VARCHAR(255) length.
+     * Prevents database-level string truncation and JSON corruption.
+     */
+    protected function encodeExtrasSafe(array $extras): ?string
+    {
+        $clean = array_filter($extras, fn ($v) => ! is_null($v) && $v !== '');
+        if (empty($clean)) {
+            return null;
+        }
+
+        $json = json_encode($clean);
+        if (strlen($json) <= 255) {
+            return $json;
+        }
+
+        // If JSON exceeds 255 chars, progressively shorten non-essential fields
+        $truncatable = ['referrer', 'campaign_identifier', 'gclid', 'cnt', 'trm', 'cmp', 'src', 'med'];
+        foreach ($truncatable as $field) {
+            if (isset($clean[$field]) && is_string($clean[$field])) {
+                $clean[$field] = substr($clean[$field], 0, 30);
+                $json = json_encode($clean);
+                if (strlen($json) <= 255) {
+                    return $json;
+                }
+            }
+        }
+
+        // If still > 255 chars, drop lower-priority fields to guarantee complete, valid JSON <= 255
+        $droppable = ['campaign_identifier', 'referrer', 'gclid', 'cnt', 'trm', 'qual'];
+        foreach ($droppable as $drop) {
+            unset($clean[$drop]);
+            $json = json_encode($clean);
+            if (strlen($json) <= 255) {
+                return $json;
+            }
+        }
+
+        return $json;
     }
 }
