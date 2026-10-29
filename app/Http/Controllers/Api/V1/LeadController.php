@@ -51,7 +51,11 @@ class LeadController extends BaseV1Controller
             }
 
             if ($request->filled('status')) {
-                $query->where('status', $request->status);
+                $statusKey = $this->normalizeStatus($request->status);
+                $query->where(function ($q) use ($statusKey, $request) {
+                    $q->where('status', $statusKey)
+                        ->orWhere('status', $request->status);
+                });
             }
 
             if ($request->filled('source')) {
@@ -164,7 +168,9 @@ class LeadController extends BaseV1Controller
             'listing_id' => 'nullable|integer',
             'enquiry_type' => 'nullable|string|max:50',
             'listing_type' => 'nullable|string|in:sale,rent,offPlan',
-            'lead_rating' => 'nullable|string|in:hot,warm,cold',
+            'status' => 'nullable|string',
+            'lead_rating' => 'nullable|string|in:hot,warm,cold,Hot,Warm,Cold,HOT,WARM,COLD',
+            'is_qualified' => 'nullable|boolean',
             'lead_qualification' => 'nullable|string|max:100',
             'investment_motivation' => 'nullable|string|max:100',
             'budget' => 'nullable|numeric|min:0',
@@ -283,6 +289,25 @@ class LeadController extends BaseV1Controller
             $budget = $request->input('budget') ?: ($property?->price);
             $actualPrice = $property?->price ?: $budget;
 
+            $status = $request->filled('status')
+                ? $this->normalizeStatus($request->input('status'))
+                : Constants::ENQUIRY_NEW_LEAD;
+
+            $isQualified = true;
+            if ($request->has('is_qualified')) {
+                $isQualified = $request->boolean('is_qualified');
+            } elseif ($request->filled('lead_qualification')) {
+                $qualString = strtolower(trim((string) $request->input('lead_qualification')));
+                $isQualified = in_array($qualString, ['qualified', 'yes', '1', 'true'], true);
+            }
+
+            if (! in_array($status, [Constants::ENQUIRY_NEW_LEAD, Constants::ENQUIRY_CONTACTING, Constants::ENQUIRY_LOST], true)) {
+                $isQualified = true;
+            }
+
+            $rawRating = $request->input('lead_rating');
+            $leadRating = $rawRating ? strtolower(trim($rawRating)) : 'hot';
+
             $enquiry = Enquiry::create([
                 'referenceNo' => $referenceNo,
                 'contactId' => $contact->id,
@@ -291,11 +316,13 @@ class LeadController extends BaseV1Controller
                 'phone' => $normalizedPhone,
                 'enquiryType' => $request->input('enquiry_type') ?: ($property && $property->listingType === 'rent' ? 'tenant' : 'buyer'),
                 'listingType' => $request->input('listing_type') ?: ($property?->listingType ?: 'sale'),
-                'status' => Constants::ENQUIRY_NEW_LEAD,
+                'status' => $status,
                 'referredBy' => $referrer,
                 'leadSource' => $request->input('lead_source') ?: 'Marketing OS',
                 'technicalSource' => 'Marketing OS API',
-                'leadRating' => $request->input('lead_rating') ?: 'hot',
+                'leadRating' => $leadRating,
+                'leadScoreLocked' => true,
+                'isQualified' => $isQualified ? 1 : 0,
                 'investmentMotivation' => $request->input('investment_motivation'),
                 'budget' => $budget,
                 'actualPrice' => $actualPrice,
@@ -356,11 +383,12 @@ class LeadController extends BaseV1Controller
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:50',
             'nationality' => 'nullable|string|max:100',
-            'status' => 'nullable|string',
             'lead_source' => 'nullable|string|max:100',
             'enquiry_type' => 'nullable|string|max:50',
             'listing_type' => 'nullable|string|in:sale,rent,offPlan',
-            'lead_rating' => 'nullable|string|in:hot,warm,cold',
+            'status' => 'nullable|string',
+            'lead_rating' => 'nullable|string|in:hot,warm,cold,Hot,Warm,Cold,HOT,WARM,COLD',
+            'is_qualified' => 'nullable|boolean',
             'lead_qualification' => 'nullable|string|max:100',
             'investment_motivation' => 'nullable|string|max:100',
             'budget' => 'nullable|numeric|min:0',
@@ -438,10 +466,33 @@ class LeadController extends BaseV1Controller
 
             // 2. Update lead fields
             if ($request->filled('status')) {
-                $updateData['status'] = $request->status;
+                $normalizedStatus = $this->normalizeStatus($request->status);
+                $updateData['status'] = $normalizedStatus;
+
+                // Auto-qualify if moving to Property Search or any advanced stage
+                if (! in_array($normalizedStatus, [
+                    Constants::ENQUIRY_NEW_LEAD,
+                    Constants::ENQUIRY_CONTACTING,
+                    Constants::ENQUIRY_LOST,
+                ], true)) {
+                    if (! $request->has('is_qualified') || $request->boolean('is_qualified')) {
+                        $updateData['isQualified'] = 1;
+                    }
+                }
             }
+
+            if ($request->has('is_qualified')) {
+                $updateData['isQualified'] = $request->boolean('is_qualified') ? 1 : 0;
+            } elseif ($request->filled('lead_qualification')) {
+                $qualString = strtolower(trim((string) $request->input('lead_qualification')));
+                if (in_array($qualString, ['qualified', 'yes', '1', 'true'], true)) {
+                    $updateData['isQualified'] = 1;
+                }
+            }
+
             if ($request->filled('lead_rating')) {
-                $updateData['leadRating'] = $request->lead_rating;
+                $updateData['leadRating'] = strtolower(trim($request->lead_rating));
+                $updateData['leadScoreLocked'] = true;
             }
             if ($request->filled('lead_source')) {
                 $updateData['leadSource'] = $request->lead_source;
@@ -677,5 +728,72 @@ class LeadController extends BaseV1Controller
         }
 
         return $json;
+    }
+
+    /**
+     * Map human labels or variations to internal CRM status keys.
+     */
+    protected function normalizeStatus(?string $status): ?string
+    {
+        if (! $status) {
+            return null;
+        }
+
+        $trimmed = trim($status);
+
+        $validKeys = [
+            Constants::ENQUIRY_NEW_LEAD,
+            Constants::ENQUIRY_CONTACTING,
+            Constants::ENQUIRY_PROPERTY_SEARCH,
+            Constants::ENQUIRY_THINKING_ABOUT_IT,
+            Constants::ENQUIRY_UNDER_OFFER,
+            Constants::ENQUIRY_SALE_PROGRESSING,
+            Constants::ENQUIRY_SOLD,
+            Constants::ENQUIRY_RENTED,
+            Constants::ENQUIRY_LOST,
+        ];
+
+        // Direct match with valid keys (case-insensitive)
+        foreach ($validKeys as $key) {
+            if (strcasecmp($trimmed, $key) === 0) {
+                return $key;
+            }
+        }
+
+        // Map label/aliases (case-insensitive) to internal keys
+        $labelMap = [
+            'new lead' => Constants::ENQUIRY_NEW_LEAD,
+            'new_lead' => Constants::ENQUIRY_NEW_LEAD,
+            'newlead' => Constants::ENQUIRY_NEW_LEAD,
+            'contacting' => Constants::ENQUIRY_CONTACTING,
+            'property search' => Constants::ENQUIRY_PROPERTY_SEARCH,
+            'property_search' => Constants::ENQUIRY_PROPERTY_SEARCH,
+            'propertysearch' => Constants::ENQUIRY_PROPERTY_SEARCH,
+            'thinking about it' => Constants::ENQUIRY_THINKING_ABOUT_IT,
+            'thinking_about_it' => Constants::ENQUIRY_THINKING_ABOUT_IT,
+            'thinkingaboutit' => Constants::ENQUIRY_THINKING_ABOUT_IT,
+            'under offer' => Constants::ENQUIRY_UNDER_OFFER,
+            'under_offer' => Constants::ENQUIRY_UNDER_OFFER,
+            'underoffer' => Constants::ENQUIRY_UNDER_OFFER,
+            'sale progressing' => Constants::ENQUIRY_SALE_PROGRESSING,
+            'sale_progressing' => Constants::ENQUIRY_SALE_PROGRESSING,
+            'saleprogressing' => Constants::ENQUIRY_SALE_PROGRESSING,
+            'sold' => Constants::ENQUIRY_SOLD,
+            'rented' => Constants::ENQUIRY_RENTED,
+            'lost' => Constants::ENQUIRY_LOST,
+            'inactive' => Constants::ENQUIRY_LOST,
+        ];
+
+        $lower = strtolower(preg_replace('/[\s_\-]+/', ' ', $trimmed));
+        if (isset($labelMap[$lower])) {
+            return $labelMap[$lower];
+        }
+
+        $noSpace = strtolower(preg_replace('/[\s_\-]+/', '', $trimmed));
+        if (isset($labelMap[$noSpace])) {
+            return $labelMap[$noSpace];
+        }
+
+        return $trimmed;
     }
 }

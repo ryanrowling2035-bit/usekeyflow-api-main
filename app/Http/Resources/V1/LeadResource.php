@@ -48,6 +48,7 @@ class LeadResource extends JsonResource
             'enquiry_type' => $this->enquiryType,
             'listing_type' => $this->listingType,
             'lead_rating' => $this->leadRating,
+            'is_qualified' => (bool) ($this->isQualified ?? false),
             'lead_qualification' => $this->leadQualification ?? ($extras['lead_qualification'] ?? ($extras['qual'] ?? null)),
             'investment_motivation' => $this->investmentMotivation,
             'budget' => $this->budget,
